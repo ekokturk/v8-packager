@@ -1,0 +1,27 @@
+diff --git ./build/config/android/BUILD.gn ./build/config/android/BUILD.gn
+index efdd3826ea47055912cb8c2fd6c20f8d26ba993d..37331a166294854267fc252a8a1504bda226551f 100644
+--- ./build/config/android/BUILD.gn
++++ ./build/config/android/BUILD.gn
+@@ -55,9 +55,19 @@ config("compiler") {
+     }
+   }
+ 
+-  # Instead of using an unwind lib from the toolchain,
+-  # buildtools/third_party/libunwind will be built and used directly.
+-  ldflags += [ "--unwindlib=none" ]
++  if (current_cpu == "x86") {
++    arch_dir = "i386"
++  } else if (current_cpu == "x64") {
++    arch_dir = "x86_64"
++  } else if (current_cpu == "arm") {
++    arch_dir = "arm"
++  } else if (current_cpu == "arm64") {
++    arch_dir = "aarch64"
++  } else {
++    assert(false, "Unknown Android ABI: " + current_cpu)
++  }
++  android_ndk_clang_version = ""
++  lib_dirs = [ "$android_ndk_library_path/clang/$android_ndk_clang_version/lib/linux/$arch_dir"]
+ 
+   # $compile_api_level corresponds to the API level used for the sysroot path
+   # calculation in //build/config/android/config.gni

@@ -1,0 +1,57 @@
+name: Build and Archive V8 for All Supported Platforms
+
+on: 
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'V8 Version'
+        default: '11.1'
+
+jobs:
+  Release:
+    runs-on: 
+    - self-hosted
+
+    env:
+      V8_LIB_ARCHIVE_DIR: 'archive'
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build All Platforms
+      run: |
+        ./BuildAll.bat "${{ github.event.inputs.version }}"
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v8-${{ github.event.inputs.version }}
+        release_name: V8 v${{ github.event.inputs.version }}
+        body: |
+          Prebuilt Shared Libraries for [V8 JavaScript Engine v${{ github.event.inputs.version }}](https://chromium.googlesource.com/v8/v8.git/+/refs/heads/${{ github.event.inputs.version }}-lkgr)
+        
+    - name: Upload Release Assets
+      id: upload-assets
+      uses: actions/github-script@v4
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const outDir = process.env.V8_LIB_ARCHIVE_DIR
+          const fs = require('fs');
+          const releaseId = ${{ steps.create_release.outputs.id }};
+          const files = fs.readdirSync(outDir).filter(file => file.endsWith('.zip'));
+          const uploadUrl = `https://uploads.github.com/repos/${process.env.GITHUB_REPOSITORY}/releases/${releaseId}/assets{?name,label}`
+    
+          for (const file of files) {
+            const assetName = file;
+            const assetData = fs.readFileSync(`${outDir}/${file}`);
+            await github.repos.uploadReleaseAsset({
+              url: uploadUrl,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              name: assetName,
+              data: assetData
+            });
+          }

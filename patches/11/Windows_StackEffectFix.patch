@@ -1,0 +1,25 @@
+diff --git ./src/base/macros.h ./src/base/macros.h
+index cd5b91f745a4532b6248d5504fd100cd9806fee4..c267b8f1e9f3055bc10484a39e574df607557b6d 100644
+--- ./src/base/macros.h
++++ ./src/base/macros.h
+@@ -389,9 +389,9 @@ bool is_inbounds(float_t v) {
+ 
+ // Setup for Windows shared library export.
+ #ifdef BUILDING_V8_SHARED
+-#define V8_EXPORT_PRIVATE __declspec(dllexport)
++#define V8_EXPORT_PRIVATE
+ #elif USING_V8_SHARED
+-#define V8_EXPORT_PRIVATE __declspec(dllimport)
++#define V8_EXPORT_PRIVATE
+ #else
+ #define V8_EXPORT_PRIVATE
+ #endif  // BUILDING_V8_SHARED
+@@ -401,7 +401,7 @@ bool is_inbounds(float_t v) {
+ // Setup for Linux shared library export.
+ #if V8_HAS_ATTRIBUTE_VISIBILITY
+ #ifdef BUILDING_V8_SHARED
+-#define V8_EXPORT_PRIVATE __attribute__((visibility("default")))
++#define V8_EXPORT_PRIVATE
+ #else
+ #define V8_EXPORT_PRIVATE
+ #endif

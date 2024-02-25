@@ -1,0 +1,6 @@
+.venv/
+dist/
+archive/
+v8/
+bin/
+__pycache__
