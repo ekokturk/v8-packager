@@ -1,0 +1,25 @@
+diff --git a/BUILD.gn b/BUILD.gn
+index 8ea86c9ef2d..a5a76e7e7c1 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -258,6 +258,10 @@ declare_args() {
+   # tools/gen-postmortem-metadata.py for details.
+   v8_postmortem_support = false
+ 
++  # Use shared-library-safe TLS for static V8 builds that are linked into a
++  # shared object by the embedder.
++  v8_tls_used_in_library = false
++
+   # Use Siphash as added protection against hash flooding attacks.
+   v8_use_siphash = false
+ 
+@@ -1193,6 +1197,9 @@ config("features") {
+   if (v8_embedder_string != "") {
+     defines += [ "V8_EMBEDDER_STRING=\"$v8_embedder_string\"" ]
+   }
++  if (v8_tls_used_in_library) {
++    defines += [ "V8_TLS_USED_IN_LIBRARY" ]
++  }
+   if (v8_enable_disassembler || v8_log_builtins_block_count_input != "") {
+     defines += [ "ENABLE_DISASSEMBLER" ]
+   }

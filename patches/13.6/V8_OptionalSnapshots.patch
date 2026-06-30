@@ -1,0 +1,37 @@
+diff --git a/gni/v8.gni b/gni/v8.gni
+index 4e46534..13240da 100644
+--- a/gni/v8.gni
++++ b/gni/v8.gni
+@@ -57,6 +57,10 @@ declare_args() {
+   # Enable monolithic static library for embedders.
+   v8_monolithic = false
+ 
++  # Generate and embed a startup snapshot. When disabled, V8 initializes its
++  # builtins at runtime and the build does not need mksnapshot.
++  v8_use_snapshot = true
++
+   # Expose public symbols for native modules of Node.js and Electron. Default
+   # is false.
+   v8_expose_public_symbols = ""
+diff --git a/BUILD.gn b/BUILD.gn
+index 02f8c0c..a05d516 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -7654,10 +7654,13 @@ if (is_component_build) {
+   }
+ } else {
+   group("v8") {
+-    public_deps = [
+-      ":v8_base",
+-      ":v8_snapshot",
+-    ]
++    public_deps = [ ":v8_base" ]
++
++    if (v8_use_snapshot) {
++      public_deps += [ ":v8_snapshot" ]
++    } else {
++      public_deps += [ ":v8_init" ]
++    }
+ 
+     public_configs = [ ":external_config" ]
+   }

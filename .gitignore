@@ -4,3 +4,4 @@ archive/
 v8/
 bin/
 __pycache__
+.docker/

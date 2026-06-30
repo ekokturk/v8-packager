@@ -1,0 +1,38 @@
+diff --git a/vs_toolchain.py b/vs_toolchain.py
+index e0f89a5..3a20b66 100755
+--- a/vs_toolchain.py
++++ b/vs_toolchain.py
+@@ -67,6 +67,7 @@ SDK_VERSION = '10.0.26100.0'
+ # which makes a difference for the arm64 runtime.
+ # The second number is an alternate version number, only used in an error string
+ MSVS_VERSIONS = collections.OrderedDict([
++    ('18', '18.0'),
+     ('2022', '17.0'),  # The VS version in our packaged toolchain.
+     ('2019', '16.0'),
+     ('2017', '15.0'),
+@@ -75,6 +76,7 @@ MSVS_VERSIONS = collections.OrderedDict([
+ # List of preferred VC toolset version based on MSVS
+ # Order is not relevant for this dictionary.
+ MSVC_TOOLSET_VERSION = {
++    '18': 'VC144',
+     '2022': 'VC143',
+     '2019': 'VC142',
+     '2017': 'VC141',
+@@ -207,7 +209,7 @@ def GetVisualStudioVersion():
+       available_versions.append(version)
+       break
+     # Detecting VS under possible paths.
+-    if version >= '2022':
++    if version not in ('2017', '2019'):
+       program_files_path_variable = '%ProgramFiles%'
+     else:
+       program_files_path_variable = '%ProgramFiles(x86)%'
+@@ -238,7 +240,7 @@ def DetectVisualStudioPath():
+   # the registry. For details see:
+   # https://blogs.msdn.microsoft.com/heaths/2016/09/15/changes-to-visual-studio-15-setup/
+   # For now we use a hardcoded default with an environment variable override.
+-  if version_as_year >= '2022':
++  if version_as_year not in ('2017', '2019'):
+     program_files_path_variable = '%ProgramFiles%'
+   else:
+     program_files_path_variable = '%ProgramFiles(x86)%'
