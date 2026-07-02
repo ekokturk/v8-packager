@@ -1,1 +1,2 @@
 *.py  tabwidth=4
+*.patch text eol=lf
