@@ -2,8 +2,8 @@
 
 ```bat
 BuildAll_DockerDesktop.bat
-BuildAll_DockerDesktop.bat 13.6 Static
-BuildAll_DockerDesktop.bat 13.6 Shared
+BuildAll_DockerDesktop.bat 13.7 Static
+BuildAll_DockerDesktop.bat 13.7 Shared
 ```
 
 ```sh
@@ -26,5 +26,5 @@ python docker/docker.py --build android --arch x64 Arm64 --config Debug Release 
 
 ```sh
 python docker/docker.py --build linux --memory 16g --jobs 8
-python docker/docker.py --build android --version 13.6 --library-type Shared --archive
+python docker/docker.py --build android --version 13.7 --library-type Shared --archive
 ```

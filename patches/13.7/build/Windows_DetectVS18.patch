@@ -1,22 +1,12 @@
 diff --git a/vs_toolchain.py b/vs_toolchain.py
 --- a/vs_toolchain.py
 +++ b/vs_toolchain.py
-@@ -67,6 +67,7 @@ SDK_VERSION = '10.0.26100.0'
- # which makes a difference for the arm64 runtime.
- # The second number is an alternate version number, only used in an error string
- MSVS_VERSIONS = collections.OrderedDict([
+@@ -69,1 +69,2 @@ MSVS_VERSIONS = collections.OrderedDict([
 +    ('18', '18.0'),
      ('2022', '17.0'),  # The VS version in our packaged toolchain.
-     ('2019', '16.0'),
-     ('2017', '15.0'),
-@@ -75,6 +76,7 @@ MSVS_VERSIONS = collections.OrderedDict([
- # List of preferred VC toolset version based on MSVS
- # Order is not relevant for this dictionary.
- MSVC_TOOLSET_VERSION = {
+@@ -77,1 +78,2 @@ MSVC_TOOLSET_VERSION = {
 +    '18': 'VC144',
      '2022': 'VC143',
-     '2019': 'VC142',
-     '2017': 'VC141',
 @@ -207,7 +209,7 @@ def GetVisualStudioVersion():
        available_versions.append(version)
        break

@@ -4,6 +4,22 @@ import shutil
 import subprocess
 
 
+def _fetch(args, cwd):
+	env = os.environ.copy()
+	env['GIT_TERMINAL_PROMPT'] = '0'
+	command = [
+		'git', '-c', 'http.lowSpeedLimit=1000',
+		'-c', 'http.lowSpeedTime=120',
+		args[0], '--progress', *args[1:],
+	]
+	try:
+		subprocess.check_call(command, cwd=cwd, env=env, timeout=1800)
+	except subprocess.TimeoutExpired as error:
+		raise RuntimeError(
+			f"Git fetch timed out after 30 minutes in '{cwd}': {' '.join(command)}"
+		) from error
+
+
 def _cachedSource(url, ref):
 	cacheRoot = os.environ.get('V8_PACKAGER_GIT_CACHE')
 	if not cacheRoot:
@@ -20,10 +36,8 @@ def _cachedSource(url, ref):
 			'--initial-branch=v8-packager'
 		], cwd=cacheRepository)
 
-	print('Cache {}@{} in {}'.format(url, ref, cacheRepository))
-	subprocess.check_call([
-		'git', 'fetch', '--depth=1', '--force', '--no-tags', url, ref
-	], cwd=cacheRepository)
+	print('Cache {}@{} in {}'.format(url, ref, cacheRepository), flush=True)
+	_fetch(['fetch', '--depth=1', '--force', '--no-tags', url, ref], cacheRepository)
 	subprocess.check_call([
 		'git', 'update-ref', cacheRef, 'FETCH_HEAD'
 	], cwd=cacheRepository)
@@ -48,7 +62,7 @@ def fetch(url, target):
 	if not os.path.exists(target):
 		os.makedirs(target)
 
-	print('Fetch {}@{} into {}'.format(url, ref, target))
+	print('Fetch {}@{} into {}'.format(url, ref, target), flush=True)
 	fetchUrl, fetchRef = _cachedSource(url, ref)
 
 	if not os.path.isdir(os.path.join(target, '.git')):
@@ -56,16 +70,18 @@ def fetch(url, target):
 			'git', 'init', '--quiet', '--initial-branch=v8-packager'
 		], cwd=target)
 	fetch_args = [
-		'git', 'fetch', '--depth=1', '--update-shallow', '--update-head-ok',
+		'fetch', '--depth=1', '--update-shallow', '--update-head-ok',
 		'--verbose', fetchUrl, fetchRef
 	]
-	if subprocess.call(fetch_args, cwd=target) != 0:
+	try:
+		_fetch(fetch_args, target)
+	except subprocess.CalledProcessError:
 		print('RETRY: {}'.format(target))
 		shutil.rmtree(target, ignore_errors=True)
 		subprocess.check_call([
 			'git', 'init', '--quiet', '--initial-branch=v8-packager'
 		], cwd=target)
-		subprocess.check_call(fetch_args, cwd=target)
+		_fetch(fetch_args, target)
 	subprocess.check_call(['git', 'checkout', '-f', '-B', 'Branch_'+ref, 'FETCH_HEAD'], cwd=target)
 
 def applyPatch(patchFile, target):

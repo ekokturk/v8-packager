@@ -45,7 +45,6 @@ class V8:
 			components = [str(comp) for comp in (self.major, self.minor, self.build, self.patch) if comp is not None]
 			return ".".join(components)
 
-
 	class BuildSettings:
 		def __init__(self, platform: PlatformType, arch: ArchType, config: BuildConfig):
 			self.platform = platform
@@ -66,6 +65,8 @@ class V8:
 			args['is_component_build'] = self.libraryType == V8.LibraryType.Shared 
 			args['v8_static_library'] = self.libraryType == V8.LibraryType.Static
 			args['v8_monolithic'] = self.libraryType == V8.LibraryType.Static
+			args['v8_monolithic_for_shared_library'] = self.libraryType == V8.LibraryType.Static
+			args['v8_generate_external_defines_header'] = True
 
 			# Validation/Debugging
 			args['treat_warnings_as_errors'] = False
@@ -97,12 +98,15 @@ class V8:
 			elif PlatformType.Linux == buildSettings.platform:
 				args['target_os'] = "linux"
 				args['use_sysroot'] = False
-				if self.libraryType == V8.LibraryType.Static:
-					args['v8_tls_used_in_library'] = True
 			elif PlatformType.Android == buildSettings.platform:
 				args['target_os'] = "android"
 			else:
 				raise RuntimeError("Error: Unsupported Platform")
+
+			if (self.libraryType == V8.LibraryType.Static and
+				buildSettings.platform in (PlatformType.Linux, PlatformType.Android)):
+				args['v8_monolithic_hide_symbols'] = True
+				args['v8_expose_public_symbols'] = True
 
 			if ArchType.x64 == buildSettings.arch:
 				args['target_cpu'] = "x64"
@@ -119,40 +123,6 @@ class V8:
 				args['symbol_level'] = 0
 
 			return args
-		
-		def getCompileDefinitions(self, buildSettings: 'V8.BuildSettings') -> List[str]:
-			defs = set()
-			if self.defaultArgs.get('v8_enable_pointer_compression') is True:
-				defs.add('V8_ENABLE_SANDBOX=1')
-				defs.add('V8_COMPRESS_POINTERS=1')
-				defs.add('V8_31BIT_SMIS_ON_64BIT_ARCH=1')
-
-			if self.defaultArgs.get('v8_enable_31bit_smis_on_64bit_arch') is True:
-				defs.add('V8_ENABLE_SANDBOX=1')
-				defs.add('V8_31BIT_SMIS_ON_64BIT_ARCH=1')
-
-			buildArgs = self.getBuildArgs(buildSettings)
-			isDebug = buildArgs.get('is_debug', False)
-			debuggingFeatures = buildArgs.get('v8_enable_debugging_features', isDebug)
-			dcheckAlwaysOn = buildArgs.get('v8_dcheck_always_on', False)
-			v8Checks = buildArgs.get('v8_enable_v8_checks', debuggingFeatures)
-			memoryAccountingChecks = buildArgs.get(
-				'v8_enable_memory_accounting_checks',
-				debuggingFeatures or dcheckAlwaysOn,
-			)
-			cppgcApiChecks = buildArgs.get(
-				'cppgc_enable_api_checks',
-				isDebug or dcheckAlwaysOn,
-			)
-
-			if v8Checks:
-				defs.add('V8_ENABLE_CHECKS')
-			if memoryAccountingChecks:
-				defs.add('V8_ENABLE_MEMORY_ACCOUNTING_CHECKS')
-			if cppgcApiChecks:
-				defs.add('CPPGC_ENABLE_API_CHECKS')
-
-			return sorted(defs)
 		
 	@staticmethod
 	def initializeRepository(version: 'V8.Version'):
@@ -401,7 +371,6 @@ class V8:
 				self.exportIncludes(os.path.join(buildOutDir, "include"))
 				buildSet.add((buildSettings.platform, buildSettings.arch))
 			if result:
-				self.exportCompileDefinitions(libOutDir, projectSettings, buildSettings)
 				key = (buildOutDir, buildSettings.platform, buildSettings.arch)
 				buildInfo.setdefault(key, []).append(buildSettings.config)
 
@@ -424,6 +393,9 @@ class V8:
 						compresslevel=6,
 					) as archive:
 						for root, dirs, files in os.walk(archPath):
+							# Ignore symbol folders left by older builds.
+							if os.path.abspath(root) == os.path.abspath(archPath):
+								dirs[:] = [directory for directory in dirs if directory != 'symbols']
 							for file in files:
 								file_path = os.path.join(root, file)
 								archive.write(file_path, arcname=os.path.relpath(file_path, buildDir))
@@ -569,6 +541,7 @@ class V8:
 			f'WebAssembly: {_enabled(releaseArgs.get("v8_enable_webassembly", False))}',
 			f'Component/shared build: {_yesNo(releaseArgs.get("is_component_build", False))}',
 			f'Static monolithic V8 archive: {_yesNo(releaseArgs.get("v8_monolithic", False))}',
+			f'Monolith prepared for shared-library embedding: {_yesNo(releaseArgs.get("v8_monolithic_for_shared_library", False))}',
 			f'Debug symbols: Debug symbol_level={debugArgs.get("symbol_level", "unknown")}, Release symbol_level={releaseArgs.get("symbol_level", "unknown")}',
 			'',
 			'Toolchain',
@@ -589,7 +562,6 @@ class V8:
 			lines.extend([
 				'C++ standard library: system libstdc++',
 				'Linux sysroot: disabled; uses container system libraries',
-				f'Shared-library-safe static TLS: {_yesNo(releaseArgs.get("v8_tls_used_in_library", False))}',
 			])
 		elif platform == PlatformType.Android:
 			lines.extend([
@@ -600,11 +572,22 @@ class V8:
 		with open(os.path.join(outDir, 'info.txt'), 'w', encoding='utf-8') as file:
 			file.write('\n'.join(lines) + '\n')
 
-	def exportCompileDefinitions(self, definitionsDir: str, projectSettings: ProjectSettings, buildSettings: BuildSettings):
+	def exportCompileDefinitions(self, projectPath: str, definitionsDir: str):
 		os.makedirs(definitionsDir, exist_ok=True)
-		defs = projectSettings.getCompileDefinitions(buildSettings)
-		releaseFile = os.path.join(definitionsDir, 'definitions.txt')
-		with open(releaseFile, 'w') as file:
+		generatedHeader = os.path.join(projectPath, 'gen', 'include', 'v8-gn.h')
+		if not os.path.isfile(generatedHeader):
+			raise RuntimeError(f'Generated V8 configuration header was not found: {generatedHeader}')
+
+		defs = []
+		with open(generatedHeader, encoding='utf-8') as file:
+			for line in file:
+				match = re.match(r'^#define\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.+))?$', line.strip())
+				if match:
+					name, value = match.groups()
+					defs.append(f'{name}={value}' if value else name)
+
+		shutil.copy2(generatedHeader, os.path.join(definitionsDir, 'v8-gn.h'))
+		with open(os.path.join(definitionsDir, 'definitions.txt'), 'w') as file:
 			file.write(';'.join(defs))
 
 	def _buildWindows(self, outLibDir: str, projectSettings: ProjectSettings, buildSettings: BuildSettings):
@@ -651,6 +634,13 @@ class V8:
 		target = 'v8_monolith' if projectSettings.libraryType == V8.LibraryType.Static else 'v8'
 		self._compileProject(projectPath, target, env)
 		self._exportLibs(projectPath, outLibDir, buildSettings.platform, buildSettings.config, projectSettings.libraryType)
+		self.exportCompileDefinitions(projectPath, outLibDir)
+		# Remove symbol exports left by older builds. Debug information remains
+		# in static archives for the final application or DLL link.
+		buildOutDir = os.path.dirname(os.path.dirname(outLibDir))
+		symbolsDir = os.path.join(buildOutDir, 'symbols')
+		if os.path.isdir(symbolsDir):
+			shutil.rmtree(symbolsDir)
 
 	def _exportLibs(self, projectLibDir: str, outLibDir: str, platform: PlatformType, buildConfig: BuildConfig, libraryType: 'V8.LibraryType' = None):
 		# Generate pattern to search library

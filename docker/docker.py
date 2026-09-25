@@ -44,19 +44,30 @@ def docker_os(timeout=180):
     deadline = time.monotonic() + timeout
     last_error = ""
     while True:
-        result = subprocess.run(
-            ["docker", "info", "--format", "{{.OSType}}"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            value = result.stdout.strip()
-            try:
-                return Platform(value)
-            except ValueError:
-                last_error = f"Docker returned an unknown OS type: {value!r}"
+        remaining = max(1, deadline - time.monotonic())
+        probe_timeout = min(10, remaining)
+        try:
+            result = subprocess.run(
+                ["docker", "info", "--format", "{{.OSType}}"],
+                capture_output=True,
+                text=True,
+                timeout=probe_timeout,
+            )
+        except subprocess.TimeoutExpired:
+            last_error = (
+                f"docker info did not respond within {probe_timeout:.0f} seconds"
+            )
         else:
-            last_error = (result.stderr or result.stdout).strip()
+            if result.returncode == 0:
+                value = result.stdout.strip()
+                try:
+                    return Platform(value)
+                except ValueError:
+                    last_error = f"Docker returned an unknown OS type: {value!r}"
+            else:
+                last_error = (result.stderr or result.stdout).strip()
+
+        print(f"Waiting for Docker: {last_error}", flush=True)
 
         if time.monotonic() >= deadline:
             detail = f": {last_error}" if last_error else ""
@@ -85,7 +96,7 @@ def build_image(platform):
 def build_v8(
     platform, source, workspace, architectures, configurations, library_type,
     memory, jobs, prepare, git_cache,
-    archive_dir=None, version="13.6"
+    archive_dir=None, version="13.7"
 ):
     required_os = docker_platform(platform)
     active_os = docker_os()
@@ -129,6 +140,8 @@ def build_v8(
         "docker",
         "run",
         "--rm",
+        "--name",
+        f"{IMAGE_PREFIX}-build-{platform.value}",
         "--memory",
         memory,
     ]
@@ -162,11 +175,26 @@ def prepare_workspace(source, platform):
     return workspace
 
 
-def has_valid_checkout(workspace):
+def has_valid_checkout(workspace, version=None):
     git_dir = os.path.join(workspace, "v8", ".git")
     head_file = os.path.join(git_dir, "HEAD")
     if not os.path.isfile(head_file):
         return False
+
+    if version:
+        version_header = os.path.join(workspace, "v8", "include", "v8-version.h")
+        if not os.path.isfile(version_header):
+            return False
+        with open(version_header) as file:
+            version_text = file.read()
+        requested_parts = version.split(".")
+        expected_defines = [
+            ("V8_MAJOR_VERSION", requested_parts[0]),
+            ("V8_MINOR_VERSION", requested_parts[1] if len(requested_parts) > 1 else None),
+        ]
+        for define, expected in expected_defines:
+            if expected is not None and f"#define {define} {expected}" not in version_text:
+                return False
     with open(head_file) as file:
         head = file.read().strip()
     if head.startswith("ref: "):
@@ -243,7 +271,7 @@ def main():
         default=16,
         help="Maximum parallel Ninja jobs",
     )
-    parser.add_argument("--version", default="13.6")
+    parser.add_argument("--version", default="13.7")
     parser.add_argument(
         "--archive",
         action="store_true",
@@ -282,7 +310,7 @@ def main():
         configurations = args.config or BUILD_CONFIGURATIONS
         prepare = (
             "reset"
-            if has_valid_checkout(build_workspace)
+            if has_valid_checkout(build_workspace, args.version)
             else "fetch"
         )
         build_v8(

@@ -1,0 +1,21 @@
+diff --git a/BUILD.gn b/BUILD.gn
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -1086,6 +1086,8 @@ config("v8_header_features") {
+ 
+   if (v8_generate_external_defines_header) {
+     defines = [ "V8_GN_HEADER" ]
++    defines += enabled_external_v8_defines
++    include_dirs = [ "$root_gen_dir/include" ]
+   } else {
+     defines = enabled_external_v8_defines
+   }
+@@ -1148,6 +1150,8 @@ config("cppgc_header_features") {
+ 
+   if (v8_generate_external_defines_header) {
+     defines = [ "V8_GN_HEADER" ]
++    defines += enabled_external_cppgc_defines
++    include_dirs = [ "$root_gen_dir/include" ]
+   } else {
+     defines = enabled_external_cppgc_defines
+   }

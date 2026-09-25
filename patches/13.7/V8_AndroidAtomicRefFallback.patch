@@ -1,0 +1,98 @@
+diff --git a/src/builtins/builtins-typed-array.cc b/src/builtins/builtins-typed-array.cc
+--- a/src/builtins/builtins-typed-array.cc
++++ b/src/builtins/builtins-typed-array.cc
+@@ -2,6 +2,9 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include <array>
++
++#include "src/base/atomicops.h"
+ #include "src/base/logging.h"
+ #include "src/builtins/builtins-utils-inl.h"
+ #include "src/builtins/builtins.h"
+@@ -531,6 +534,35 @@ simdutf::result ArrayBufferSetFromBase64(
+   return simd_result;
+ }
+ 
++size_t AtomicBinaryToBase64(const char* input, size_t length, char* output,
++                            simdutf::base64_options options) {
++#if SIMDUTF_ATOMIC_REF
++  return simdutf::atomic_binary_to_base64(input, length, output, options);
++#else
++  // Android's NDK libc++ does not currently provide std::atomic_ref. Preserve
++  // SharedArrayBuffer byte-level atomicity while encoding in 3-byte-aligned
++  // chunks so each chunk can be encoded independently.
++  constexpr size_t kInputBlockSize = 1024 * 3;
++  std::array<char, kInputBlockSize> input_buffer;
++  const auto* atomic_input =
++      reinterpret_cast<const volatile base::Atomic8*>(input);
++  size_t output_offset = 0;
++
++  for (size_t input_offset = 0; input_offset < length;
++       input_offset += kInputBlockSize) {
++    const size_t current_block_size =
++        std::min(kInputBlockSize, length - input_offset);
++    for (size_t i = 0; i < current_block_size; ++i) {
++      input_buffer[i] = base::Relaxed_Load(atomic_input + input_offset + i);
++    }
++    output_offset += simdutf::binary_to_base64(
++        input_buffer.data(), current_block_size, output + output_offset,
++        options);
++  }
++  return output_offset;
++#endif
++}
++
+ }  // namespace
+ 
+ // https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.frombase64
+@@ -820,7 +852,7 @@ BUILTIN(Uint8ArrayPrototypeToBase64) {
+ 
+     size_t simd_result_size;
+     if (uint8array->buffer()->is_shared()) {
+-      simd_result_size = simdutf::atomic_binary_to_base64(
++      simd_result_size = AtomicBinaryToBase64(
+           std::bit_cast<const char*>(uint8array->GetBuffer()->backing_store()),
+           length, reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
+     } else {
+diff --git a/src/objects/simd.cc b/src/objects/simd.cc
+--- a/src/objects/simd.cc
++++ b/src/objects/simd.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "src/objects/simd.h"
+ 
++#include "src/base/atomicops.h"
+ #include "src/base/cpu.h"
+ #include "src/codegen/cpu-features.h"
+ #include "src/objects/compressed-slots.h"
+@@ -480,14 +481,9 @@ void Uint8ArrayToHexSlow(const char* bytes, size_t length,
+ void AtomicUint8ArrayToHexSlow(const char* bytes, size_t length,
+                                DirectHandle<SeqOneByteString> string_output) {
+   int index = 0;
+-  // std::atomic_ref<T> must not have a const T, see
+-  // https://cplusplus.github.io/LWG/issue3508
+-  // we instead provide a mutable input, which is ok since we are only reading
+-  // from it.
+-  char* mutable_bytes = const_cast<char*>(bytes);
+   for (size_t i = 0; i < length; i++) {
+-    uint8_t byte =
+-        std::atomic_ref<char>(mutable_bytes[i]).load(std::memory_order_relaxed);
++    uint8_t byte = base::Relaxed_Load(
++        reinterpret_cast<const volatile base::Atomic8*>(bytes + i));
+     PerformNibbleToHexAndWriteIntoStringOutPut(byte, index, string_output);
+     index += 2;
+   }
+@@ -1082,8 +1078,9 @@ bool ArrayBufferFromHex(const base::Vector<T>& input_vector, bool is_shared,
+     result = HandleRemainingHexValues(input_vector, i);
+     if (result.has_value()) {
+       if (is_shared) {
+-        std::atomic_ref<uint8_t>(buffer[index++])
+-            .store(result.value(), std::memory_order_relaxed);
++        base::Relaxed_Store(
++            reinterpret_cast<volatile base::Atomic8*>(buffer + index++),
++            static_cast<base::Atomic8>(result.value()));
+       } else {
+         buffer[index++] = result.value();
+       }

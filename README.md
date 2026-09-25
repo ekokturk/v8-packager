@@ -8,7 +8,7 @@ A tool to compile and package [V8 JavaScript Engine](https://v8.dev/) libraries.
 ### How to use
 - Fetch the V8 repository:
     ```
-    python3 -m tools.run --fetch --version <"13.6">
+    python3 -m tools.run --fetch --version <"13.7">
     ```
 - Compile libraries and output build dependencies:
     ```
